@@ -1,0 +1,10 @@
+{
+  "name": "Dual Timer",
+  "short_name": "Dual Timer",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#071019",
+  "theme_color": "#071019",
+  "lang": "ja",
+  "icons": []
+}
