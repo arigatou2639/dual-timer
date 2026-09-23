@@ -1,51 +1,172 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#071019">
-  <title>Dual Timer</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dual Timer</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#071019;color:#fff}
+main{max-width:560px;margin:auto;padding:18px 14px}
+.timer-section{background:#101821;border:1px solid #1b2732;border-radius:22px;padding:14px 18px 18px;margin-bottom:18px}
+h1{font-size:28px;line-height:1;margin:0 0 22px;text-align:center;display:flex;align-items:center;gap:12px}
+h1:before,h1:after{content:"";height:2px;flex:1;background:var(--accent)}
+.timer-section:nth-of-type(1){--accent:#1677ed}
+.timer-section:nth-of-type(2){--accent:#18c86a}
+h1{color:var(--accent)}
+.previous{position:relative;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:18px}
+.previous:before{content:"前回";position:absolute;left:0;top:-28px;font-weight:700}
+.previous>span:first-of-type{display:none}
+.previous-time{order:1;flex:1;min-width:0;text-align:left;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:22px;font-weight:700;background:#232a32;border-radius:16px;padding:14px;margin-top:10px}
+.lock{order:2;margin-top:10px;padding:12px 14px;background:#232a32;font-size:18px}
+.reset{order:3;margin-top:10px;min-width:128px;white-space:nowrap}
+button{border:0;background:#232a32;color:#fff;border-radius:16px;padding:12px 16px;font-size:16px;font-weight:700;cursor:pointer}
+button:active{transform:translateY(1px)}
+.locked .lock{background:#303943}
+.main-time{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;text-align:center;font-size:72px;line-height:1;font-weight:500;letter-spacing:-2px;margin:22px 0 26px}
+.start{display:block;width:100%;font-size:20px;padding:17px;border-radius:32px;background:var(--accent);color:#fff}
+.hint{display:none}
+@media(max-width:420px){main{padding:14px 10px}.timer-section{padding:14px 14px 18px}.previous{gap:7px}.reset{min-width:112px;padding-left:11px;padding-right:11px}.main-time{font-size:64px}}
+</style>
 </head>
 <body>
-  <main class="app">
-    <section class="timer-card blue" aria-label="横のタイマー">
-      <div class="title-row"><span></span><h1>横</h1><span></span></div>
+<main id="app"></main>
 
-      <div class="previous-row">
-        <div class="previous-box">
-          <div class="label">前回</div>
-          <div class="previous-content">
-            <strong id="horizontalPrevious">00.00</strong>
-            <button id="horizontalLock" class="icon-button" aria-label="前回の時間をロック" title="ロック切替">🔓</button>
-          </div>
-        </div>
-        <button id="horizontalReset" class="secondary-button">↻&nbsp; リセット</button>
+<script>
+(() => {
+  const app = document.getElementById('app');
+
+  const state = {
+    横: {time:0, previous:0, locked:false, target:0, running:false, raf:null, last:null},
+    奥: {time:0, previous:0, locked:false, target:0, running:false, raf:null, last:null}
+  };
+
+  const format = ms => {
+    ms = Math.max(0, Math.round(ms));
+    const hundredths = Math.floor(ms / 10);
+    const sec = Math.floor(hundredths / 100);
+    const hs = hundredths % 100;
+    return String(sec).padStart(2,'0') + '.' + String(hs).padStart(2,'0');
+  };
+
+  function render(name){
+    const s = state[name];
+    const el = document.querySelector(`[data-name="${name}"]`);
+    if(!el) return;
+    el.classList.toggle('locked', s.locked);
+    el.querySelector('.previous-time').textContent = format(s.locked ? s.target : s.previous);
+    el.querySelector('.main-time').textContent = format(s.time);
+    el.querySelector('.lock').textContent = s.locked ? '🔒' : '🔓';
+    el.querySelector('.start').textContent = s.running ? '■ 停止' : '▶ 開始 / 停止';
+  }
+
+  function tick(name, now){
+    const s = state[name];
+    if(!s.running) return;
+
+    if(s.last === null) s.last = now;
+    const elapsed = now - s.last;
+    s.last = now;
+
+    if(s.locked){
+      s.time -= elapsed;
+      if(s.time <= 0){
+        s.time = 0;
+        s.running = false;
+        s.last = null;
+      }
+    }else{
+      s.time += elapsed;
+    }
+
+    render(name);
+    if(s.running) s.raf = requestAnimationFrame(t => tick(name,t));
+  }
+
+  function startStop(name){
+    const s = state[name];
+
+    if(s.running){
+      s.running = false;
+      s.last = null;
+      if(s.raf) cancelAnimationFrame(s.raf);
+      s.raf = null;
+      if(!s.locked) s.previous = s.time;
+      render(name);
+      return;
+    }
+
+    if(s.locked){
+      // ロック時は、設定されたメイン時間からカウントダウンを開始
+      s.time = s.target;
+    }
+    s.running = true;
+    s.last = null;
+    s.raf = requestAnimationFrame(t => tick(name,t));
+    render(name);
+  }
+
+  function toggleLock(name){
+    const s = state[name];
+
+    if(s.running) return; // 動作中はロック状態を変更しない
+
+    if(!s.locked){
+      // 現在の計測時間をメイン時間として固定
+      s.target = s.time;
+      s.previous = s.time;
+      s.locked = true;
+      s.time = s.target;
+    }else{
+      // ロック解除：通常の計測モードへ
+      s.locked = false;
+      s.previous = s.target;
+      s.time = 0;
+      s.target = 0;
+    }
+    render(name);
+  }
+
+  function reset(name){
+    const s = state[name];
+    s.running = false;
+    s.time = 0;
+    s.previous = 0;
+    s.target = 0;
+    s.last = null;
+    s.locked = false;
+    if(s.raf) cancelAnimationFrame(s.raf);
+    s.raf = null;
+    render(name);
+  }
+
+  for(const name of ['横','奥']){
+    const section = document.createElement('section');
+    section.className = 'timer-section';
+    section.dataset.name = name;
+    section.innerHTML = `
+      <h1>${name}</h1>
+      <div class="previous">
+        <button class="lock" type="button" aria-label="${name}のロック">🔓</button>
+        <span>前回</span>
+        <span class="previous-time">00.00</span>
+        <button class="reset" type="button">↻ リセット</button>
       </div>
+      <div class="main-time" aria-live="polite">00.00</div>
+      <button class="start" type="button">▶ 開始 / 停止</button>
+      <div class="hint">ロックすると、この時間を基準にカウントダウンします</div>
+    `;
 
-      <div id="horizontalDisplay" class="display">00.00</div>
-      <button id="horizontalStart" class="start-button">▶&nbsp; 開始 / 停止</button>
-    </section>
+    section.querySelector('.start').addEventListener('click', () => startStop(name));
+    section.querySelector('.lock').addEventListener('click', () => toggleLock(name));
+    section.querySelector('.reset').addEventListener('click', () => reset(name));
+    app.appendChild(section);
+  }
 
-    <section class="timer-card green" aria-label="奥のタイマー">
-      <div class="title-row"><span></span><h1>奥</h1><span></span></div>
-
-      <div class="previous-row">
-        <div class="previous-box">
-          <div class="label">前回</div>
-          <div class="previous-content">
-            <strong id="depthPrevious">00.00</strong>
-            <button id="depthLock" class="icon-button" aria-label="前回の時間をロック" title="ロック切替">🔓</button>
-          </div>
-        </div>
-        <button id="depthReset" class="secondary-button">↻&nbsp; リセット</button>
-      </div>
-
-      <div id="depthDisplay" class="display">00.00</div>
-      <button id="depthStart" class="start-button">▶&nbsp; 開始 / 停止</button>
-    </section>
-  </main>
-  <script src="app.js"></script>
+  // タブを離れてもタイマーがずれにくいよう、requestAnimationFrameの経過時間で補正。
+  render('横');
+  render('奥');
+})();
+</script>
 </body>
 </html>
